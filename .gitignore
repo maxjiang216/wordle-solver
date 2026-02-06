@@ -1,5 +1,5 @@
-# Compiled binaries
-wordle_*
+# Compiled binaries (only in root directory)
+/wordle_*
 *.exe
 *.out
 
