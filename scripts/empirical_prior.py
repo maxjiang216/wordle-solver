@@ -25,6 +25,7 @@ Usage:
 import argparse
 import csv
 import datetime as dt
+import json
 import os
 
 import numpy as np
@@ -254,11 +255,37 @@ def main():
     ap.add_argument('--export', metavar='CSV', nargs='?', const=os.path.join(ROOT, 'data', 'prior_next.csv'),
                     help='write word,prob for the next day (default data/prior_next.csv), '
                          'for src/weighted_three_solver.cpp')
+    ap.add_argument('--model-cache', metavar='JSON',
+                    help='fit once per month on answers before the 1st (as in the backtest) and reuse '
+                         'the coefficients from this file for the rest of the month')
     args = ap.parse_args()
 
     table = WordTable()
     answers = load_answers()
-    model = PriorModel(table, half_life=args.half_life).fit(answers)
+    model = PriorModel(table, half_life=args.half_life)
+    if args.model_cache:
+        nxt = answers[-1][0] + dt.timedelta(days=1)
+        month_start = nxt.replace(day=1)
+        train = [a for a in answers if a[0] < month_start]
+        key = {'month': str(month_start)[:7], 'n_train': len(train), 'half_life': args.half_life,
+               'last_train': str(train[-1][0]), 'n_params': model.k}
+        cached = None
+        try:
+            with open(args.model_cache) as f:
+                cached = json.load(f)
+        except (OSError, ValueError):
+            pass
+        if cached and cached.get('key') == key:
+            model.theta = np.array(cached['theta'])
+            print('Model: cached fit for', key['month'])
+        else:
+            model.fit(train)
+            os.makedirs(os.path.dirname(os.path.abspath(args.model_cache)), exist_ok=True)
+            with open(args.model_cache, 'w') as f:
+                json.dump({'key': key, 'theta': model.theta.tolist()}, f)
+            print('Model: refit for', key['month'])
+    else:
+        model.fit(answers)
     print('Fitted coefficients (logit scale):')
     print(model.describe())
     cp = model.category_probs(answers, len(answers))

@@ -21,6 +21,7 @@
  *
  * Usage:
  *   weighted_three_solver [--prior FILE] [--top N] [--max-first K]   search opener
+ *       (--candidates F also evaluates the openers listed in F; --save-top F writes the best 30)
  *   weighted_three_solver [--prior FILE] --play [first_guess]        interactive guide
  *       (--solved-file F writes the winning word to F; used by ./daily)
  *   weighted_three_solver [--prior FILE] --eval [first_guess]        turn distribution
@@ -321,7 +322,10 @@ struct FirstResult {
 };
 
 // Opener search. Returns results sorted best first.
-static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, bool verbose) {
+// Opener search. Evaluates `extra` (e.g. yesterday's best openers) plus the top
+// MAX_FIRST by bound. Returns results sorted best first.
+static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, bool verbose,
+                                        const vector<int>& extra = {}) {
     int N = c.N;
     vector<int> byw(N);
     iota(byw.begin(), byw.end(), 0);
@@ -349,14 +353,21 @@ static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, b
             });
         for (auto& t : pool) t.join();
     }
+    vector<FirstResult> by_guess = cands;
     sort(cands.begin(), cands.end(), [](const FirstResult& x, const FirstResult& y) { return x.bound > y.bound; });
+    vector<FirstResult> todo;
+    vector<char> queued(N, 0);
+    for (int g : extra)
+        if (!queued[g]) queued[g] = 1, todo.push_back(by_guess[g]);
+    for (int i = 0; i < N && i < MAX_FIRST; i++)
+        if (!queued[cands[i].guess]) queued[cands[i].guess] = 1, todo.push_back(cands[i]);
+    bool capped = MAX_FIRST < N && cands[min(MAX_FIRST, N - 1)].bound >= 0;
 
     vector<int> order = byw;  // guess order for group solving: likely answers first
     int nt = max(1u, thread::hardware_concurrency());
     atomic<int> next(0), done(0);
     mutex mu;
     double best_p3 = 0;
-    bool capped = false;
     vector<FirstResult> evaluated;
     vector<thread> pool;
     for (int t = 0; t < nt; t++)
@@ -365,12 +376,11 @@ static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, b
             vector<vector<int>> groups(NPAT);
             for (;;) {
                 int i = next.fetch_add(1);
-                if (i >= N) break;
-                FirstResult r = cands[i];
+                if (i >= (int)todo.size()) break;
+                FirstResult r = todo[i];
                 {
                     lock_guard<mutex> lk(mu);
-                    if (r.bound < best_p3 - TOL) break;
-                    if (i >= MAX_FIRST) { capped = true; break; }
+                    if (r.bound < best_p3 - TOL) continue;  // cannot win
                 }
                 for (auto& v : groups) v.clear();
                 const u8* row = &c.pat[(size_t)r.guess * N];
@@ -564,6 +574,7 @@ static void backtest(const Ctx& c, const string& days_path, const string& bin_pa
 
 int main(int argc, char** argv) {
     string prior_path = "data/prior_next.csv", mode = "search", first_arg, days_path, bin_path, solved_file;
+    string cand_path, save_top_path;
     int top_n = 20;
     for (int i = 1; i < argc; i++) {
         string a = argv[i];
@@ -572,6 +583,8 @@ int main(int argc, char** argv) {
         else if (a == "--max-first" && i + 1 < argc) MAX_FIRST = atoi(argv[++i]);
         else if (a == "--tol" && i + 1 < argc) TOL = atof(argv[++i]);
         else if (a == "--solved-file" && i + 1 < argc) solved_file = argv[++i];
+        else if (a == "--candidates" && i + 1 < argc) cand_path = argv[++i];
+        else if (a == "--save-top" && i + 1 < argc) save_top_path = argv[++i];
         else if (a == "--play" || a == "--eval") {
             mode = a.substr(2);
             if (i + 1 < argc && argv[i + 1][0] != '-') first_arg = argv[++i];
@@ -600,7 +613,15 @@ int main(int argc, char** argv) {
         first = gidx[first_arg];
     }
     if (first < 0 || mode == "search") {
-        auto res = search_first(c, w, true);
+        vector<int> extra;
+        if (!cand_path.empty())
+            for (auto& x : load_words(cand_path))
+                if (gidx.count(x)) extra.push_back(gidx[x]);
+        auto res = search_first(c, w, true, extra);
+        if (!save_top_path.empty()) {
+            ofstream out(save_top_path);
+            for (int i = 0; i < (int)res.size() && i < 30; i++) out << c.words[res[i].guess] << "\n";
+        }
         if (mode == "search") {
             printf("Top first guesses (%zu evaluated; others pruned by bound)\n", res.size());
             printf("%-4s %-6s %8s %8s %8s %8s\n", "#", "guess", "P<=3", "P<=2", "P<=1", "E[g]*");
