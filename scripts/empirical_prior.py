@@ -92,12 +92,17 @@ class History:
                 REP: np.flatnonzero(used)}
 
     def category_of(self, word):
+        if word not in self.t.index:  # answer outside valid_words.txt: count as off-list
+            return OFF
         i = self.t.index[word]
         if self.last_used[i] >= 0:
             return REP
         return ORIG if self.t.in_orig[i] else OFF
 
     def push(self, date, word):
+        if word not in self.t.index:
+            self.prev_word = None
+            return
         self.last_used[self.t.index[word]] = date.toordinal()
         self.prev_word = word
 
@@ -144,6 +149,9 @@ class PriorModel:
         hist = History(t)
         days = []  # (cat, X, chosen_row)
         for date, word in answers:
+            if word not in t.index:  # cannot score a word with no features
+                hist.push(date, word)
+                continue
             cat = hist.category_of(word)
             pool = hist.pools()[cat]
             lag = t.lag_features(hist.prev_word)

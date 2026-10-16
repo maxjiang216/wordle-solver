@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 One command for daily play:
-  1. asks for any missing past answers and appends them to data/wordle_answers.csv
+  1. fetches any missing past answers (up to yesterday, never today) from NYT's
+     puzzle feed and appends them to data/wordle_answers.csv; asks if offline
   2. rebuilds weighted_three_solver if its source changed
   3. refits the empirical prior and exports today's probabilities
   4. runs the interactive guide
@@ -14,9 +15,11 @@ Usage: ./daily            (run from anywhere)
 import argparse
 import csv
 import datetime as dt
+import json
 import os
 import subprocess
 import sys
+import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CSV = os.path.join(ROOT, 'data', 'wordle_answers.csv')
@@ -24,6 +27,25 @@ SOLVER = os.path.join(ROOT, 'weighted_three_solver')
 SOURCE = os.path.join(ROOT, 'src', 'weighted_three_solver.cpp')
 SOLVED = os.path.join(ROOT, 'cache', 'solved_today.txt')
 DAY0 = dt.date(2021, 6, 19)  # puzzle #0
+# The feed NYT's own Wordle page loads. It also serves today's and future
+# puzzles, so only ever request dates before today.
+FEED = 'https://www.nytimes.com/svc/wordle/v2/{}.json'
+
+
+def fetch_answer(date):
+    """Official answer for a past date, or None if the fetch fails or looks wrong."""
+    assert date < dt.date.today(), 'refusing to fetch today or later (spoiler)'
+    try:
+        req = urllib.request.Request(FEED.format(date), headers={'User-Agent': 'Mozilla/5.0'})
+        d = json.load(urllib.request.urlopen(req, timeout=10))
+    except Exception as e:  # network error, HTTP error, bad JSON
+        print(f'    fetch failed for {date}: {e}')
+        return None
+    word = str(d.get('solution', '')).upper()
+    if d.get('print_date') != str(date) or d.get('days_since_launch') != (date - DAY0).days or len(word) != 5:
+        print(f'    unexpected feed data for {date}: {d}')
+        return None
+    return word
 
 
 def append_answer(date, word):
@@ -56,13 +78,19 @@ def main():
     # 1. fill gaps up to yesterday
     d = last + dt.timedelta(days=1)
     if d < today:
-        print(f'Answer history ends {last}. Enter the missing answers (Ctrl-C to quit).')
+        print(f'Answer history ends {last}; fetching {d} .. {today - dt.timedelta(days=1)} from NYT...')
     while d < today:
-        w = input(f'  {d} (#{(d - DAY0).days}): ').strip().upper()
-        if w not in valid:
-            print('    not a valid 5-letter word, try again')
-            continue
+        w = fetch_answer(d)
+        if w is not None and w not in valid:
+            print(f'    note: {w} is not in valid_words.txt; recording it anyway')
+            print('    (the solver cannot suggest it until valid_words.txt and word features are updated)')
+        while w is None:
+            w = input(f'  enter answer for {d} (#{(d - DAY0).days}) manually: ').strip().upper()
+            if w not in valid:
+                print('    not a valid 5-letter word, try again')
+                w = None
         append_answer(d, w)
+        print(f'  {d} #{(d - DAY0).days} {w}')
         d += dt.timedelta(days=1)
 
     # 2. build solver if needed
@@ -94,7 +122,7 @@ def main():
         os.remove(SOLVED)
         print(f'Recorded {today}: {word}')
     else:
-        print('Not solved; tomorrow\'s run will ask for today\'s answer.')
+        print('Not solved; tomorrow\'s run will fetch today\'s answer.')
 
 
 if __name__ == '__main__':
