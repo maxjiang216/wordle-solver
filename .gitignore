@@ -31,3 +31,7 @@ Thumbs.db
 *.dylib
 *.dll
 
+
+# Generated caches
+/cache/
+/data/prior_next.csv

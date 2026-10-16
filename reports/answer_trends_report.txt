@@ -1,0 +1,173 @@
+==============================================================================
+1. REPEATS AND OFF-LIST ANSWERS
+==============================================================================
+Answers: 1933 (2021-06-19 .. 2026-10-03)
+Original-list words never used yet: 465 of 2309
+
+quarter     n  orig_new  offlist  repeat   off%   rep%
+2021Q2     12        12        0       0    0.0    0.0
+2021Q3     92        92        0       0    0.0    0.0
+2021Q4     92        92        0       0    0.0    0.0
+2022Q1     90        90        0       0    0.0    0.0
+2022Q2     91        91        0       0    0.0    0.0
+2022Q3     92        92        0       0    0.0    0.0
+2022Q4     92        92        0       0    0.0    0.0
+2023Q1     90        89        1       0    1.1    0.0
+2023Q2     91        88        3       0    3.3    0.0
+2023Q3     92        92        0       0    0.0    0.0
+2023Q4     92        92        0       0    0.0    0.0
+2024Q1     91        91        0       0    0.0    0.0
+2024Q2     91        89        2       0    2.2    0.0
+2024Q3     92        91        1       0    1.1    0.0
+2024Q4     92        89        3       0    3.3    0.0
+2025Q1     90        87        3       0    3.3    0.0
+2025Q2     91        87        4       0    4.4    0.0
+2025Q3     92        84        8       0    8.7    0.0
+2025Q4     92        88        4       0    4.3    0.0
+2026Q1     90        76        7       7    7.8    7.8
+2026Q2     91        77        5       9    5.5    9.9
+2026Q3     92        63       20       9   21.7    9.8
+2026Q4      3         0        3       0  100.0    0.0
+
+Repeats (25); first repeat 2026-02-02:
+  2026-02-02 #1689  CIGAR  first used 2021-06-19  gap 1689 days
+  2026-02-17 #1704  SQUAD  first used 2022-04-11  gap 1408 days
+  2026-02-21 #1708  AWAKE  first used 2021-06-23  gap 1704 days
+  2026-03-03 #1718  LINEN  first used 2021-08-09  gap 1667 days
+  2026-03-15 #1730  GRADE  first used 2021-07-04  gap 1715 days
+  2026-03-27 #1742  IVORY  first used 2021-08-17  gap 1683 days
+  2026-03-30 #1745  COMET  first used 2021-10-19  gap 1623 days
+  2026-04-04 #1750  SANDY  first used 2024-10-27  gap 524 days
+  2026-04-19 #1765  STAND  first used 2021-08-15  gap 1708 days
+  2026-05-02 #1778  BRING  first used 2021-11-30  gap 1614 days
+  2026-05-12 #1788  CLOCK  first used 2021-11-26  gap 1628 days
+  2026-05-21 #1797  AGREE  first used 2021-08-28  gap 1727 days
+  2026-05-30 #1806  SMILE  first used 2023-09-27  gap 976 days
+  2026-06-07 #1814  THUMB  first used 2021-10-12  gap 1699 days
+  2026-06-12 #1819  BREAK  first used 2021-12-08  gap 1647 days
+  2026-06-26 #1833  ACUTE  first used 2021-12-26  gap 1643 days
+  2026-07-03 #1840  BATON  first used 2021-12-19  gap 1657 days
+  2026-07-13 #1850  STOUT  first used 2021-08-23  gap 1785 days
+  2026-07-30 #1867  FLUME  first used 2021-08-26  gap 1799 days
+  2026-08-06 #1874  GRIPE  first used 2021-12-23  gap 1687 days
+  2026-08-07 #1875  FEIGN  first used 2021-07-08  gap 1856 days
+  2026-08-21 #1889  TRACE  first used 2021-12-15  gap 1710 days
+  2026-08-25 #1893  CLICK  first used 2021-10-31  gap 1759 days
+  2026-09-13 #1912  FOCUS  first used 2022-03-13  gap 1645 days
+  2026-09-23 #1922  FORTH  first used 2021-08-13  gap 1867 days
+
+Repeat rate since 2026-02-02: 25/244 = 10.2%
+First-use year of repeated words vs share of all previously-used words:
+  2021: repeats  21 ( 84.0%)   pool share  11.6%
+  2022: repeats   2 (  8.0%)   pool share  21.6%
+  2023: repeats   1 (  4.0%)   pool share  21.6%
+  2024: repeats   1 (  4.0%)   pool share  21.7%
+  2025: repeats   0 (  0.0%)   pool share  21.6%
+  2026: repeats   0 (  0.0%)   pool share   1.9%
+Min gap between uses: 524 days
+
+==============================================================================
+2. WORD FREQUENCY (wordfreq Zipf; 0 = unseen, ~3 = once per million words)
+==============================================================================
+Mean Zipf: orig-list used 3.71 | orig-list unused 3.18 | off-list answers 2.71 | non-orig valid guesses 1.27
+
+NYT appears to consume the original list most-familiar-first: the unused remainder is rarer.
+zipf bin   orig used  unused  %unused
+ 0.0-1.5           2       3      60%
+ 1.5-2.0          13      22      63%
+ 2.0-2.5         104      71      41%
+ 2.5-3.0         312      93      23%
+ 3.0-3.5         395     118      23%
+ 3.5-4.0         371      83      18%
+ 4.0-4.5         276      52      16%
+ 4.5-9.0         371      23       6%
+
+Off-list pick rate by Zipf, among non-original valid guesses.
+"clean" = lowercase dictionary word, not a proper noun, not an inflection.
+zipf bin      all  picks  rate% |  clean  picks  rate%
+ 0.0-1.5     7042      1   0.01 |     99      0   0.00
+ 1.5-2.0     1943      5   0.26 |    149      5   3.36
+ 2.0-2.5     1468     20   1.36 |    177     17   9.60
+ 2.5-3.0      936     20   2.14 |    162     17  10.49
+ 3.0-3.5      530      9   1.70 |     78      9  11.54
+ 3.5-4.0      294      6   2.04 |     24      5  20.83
+ 4.0-4.5      192      3   1.56 |     13      2  15.38
+ 4.5-9.0      141      0   0.00 |      8      0   0.00
+  dict_lower  : off-list picks  55/64   non-orig pool  2417/12546
+  proper_only : off-list picks   0/64   non-orig pool   304/12546
+  inflected   : off-list picks   0/64   non-orig pool  2084/12546
+  off-list picks not in lowercase dictionary: BEAUT, GRIFT, GUNKY, INDIE, KEFIR, LORIS, OOMPH, REMIX, TWEEN
+
+Off-list answers (Zipf):
+  2023-03-27 GUANO 2.61   2023-04-09 SNAFU 2.54   2023-06-09 BALSA 2.48   2023-06-19 KAZOO 2.35
+  2024-04-22 LASER 4.20   2024-05-08 PIOUS 3.31   2024-09-17 BEAUT 2.56   2024-10-09 MOMMY 3.89
+  2024-11-13 PRIMP 1.55   2024-11-14 UVULA 1.98   2025-01-07 ATLAS 3.80   2025-01-20 SQUID 3.44
+  2025-02-18 INDIE 4.00   2025-04-21 SPATE 2.79   2025-05-24 SUEDE 3.25   2025-05-25 GRIFT 2.28
+  2025-06-20 TAUPE 2.54   2025-07-06 ATRIA 2.38   2025-07-16 NERVY 2.25   2025-07-18 LORIS 2.33
+  2025-07-21 TIZZY 2.27   2025-07-25 GOFER 1.69   2025-08-13 KEFIR 2.13   2025-08-14 KNELL 2.59
+  2025-08-16 MATTE 3.52   2025-11-11 GIZMO 2.61   2025-11-13 TINGE 2.83   2025-11-28 COLIC 2.65
+  2025-11-30 MUGGY 2.53   2026-01-03 SITAR 2.41   2026-01-06 OOMPH 2.62   2026-02-13 MOOCH 2.43
+  2026-02-25 SHRED 3.32   2026-02-28 HYDRA 3.31   2026-03-06 GUNKY 1.42   2026-03-20 OASIS 3.56
+  2026-04-10 CAROM 1.97   2026-04-16 CUBIT 2.07   2026-04-18 TOADY 2.14   2026-05-28 DIVOT 2.12
+  2026-06-19 EMOJI 3.23   2026-07-02 MAVEN 2.88   2026-07-15 PSHAW 1.79   2026-07-21 SHILL 2.68
+  2026-07-25 ALOHA 3.09   2026-08-09 CLUNK 2.23   2026-08-14 GEODE 2.06   2026-08-16 ASPIC 2.09
+  2026-08-24 RUNNY 2.94   2026-08-26 CAPON 2.19   2026-08-28 TWEEN 2.84   2026-08-30 INTEL 4.07
+  2026-09-01 REMIX 3.99   2026-09-05 SOUPY 2.28   2026-09-06 BEIGE 3.30   2026-09-08 LIVEN 2.63
+  2026-09-11 ASTER 2.81   2026-09-12 NIFTY 3.17   2026-09-19 WAKEN 2.29   2026-09-21 PAGER 2.63
+  2026-09-24 MESSY 3.87   2026-10-01 RITZY 2.23   2026-10-02 USURY 2.54   2026-10-03 PEEVE 2.80
+
+Most frequent never-used clean non-original words (plausible future answers):
+  GONNA WANNA GOTTA JAPAN PETER BITCH KINDA ROMAN JIMMY NAKED TRANS MARIA
+  SLAVE PUSSY TERRY JEANS CHILE PENIS LEGIT LYNCH WHORE YAHOO CALIF PROMO
+  COMBO DUNNO GENUS AMINO NEXUS PANDA SONNY HOGAN NIGGA LOTUS SWIPE GIMME
+  YUMMY MIXER JIHAD PSYCH ALIAS LITER KUDOS MENUS TAXIS ASPEN BOGUS TUMMY
+  HUBBY MOMMA ELVES LATEX COCKY MISTY TWAIN BIKER CARBS PORNO DOGGY THINE
+
+==============================================================================
+3. CONSECUTIVE-DAY LETTER CORRELATION (permutation test, 5000 shuffles)
+==============================================================================
+ratio = observed / mean under shuffled day order (same words, random order).
+p_low = P(shuffle <= observed): small means "less shared than chance".
+-- all days (1933 days)
+  shared letters, lag 1            obs 1.1894  shuffled 1.2183  ratio 0.976  p_low 0.0620
+  shared letters, lag 2            obs 1.2289  shuffled 1.2179  ratio 1.009  p_low 0.7351
+  shared letters, lag 3            obs 1.2233  shuffled 1.2182  ratio 1.004  p_low 0.6135
+  shared letters, lag 7            obs 1.2196  shuffled 1.2177  ratio 1.002  p_low 0.5461
+  same-position matches, lag 1     obs 0.3256  shuffled 0.3881  ratio 0.839  p_low 0.0002
+  same-position matches, lag 2     obs 0.3811  shuffled 0.3878  ratio 0.983  p_low 0.3249
+  same letter pos 1, lag 1         obs 0.0466  shuffled 0.0659  ratio 0.707  p_low 0.0002
+  same letter pos 2, lag 1         obs 0.0797  shuffled 0.0846  ratio 0.943  p_low 0.2290
+  same letter pos 3, lag 1         obs 0.0678  shuffled 0.0743  ratio 0.913  p_low 0.1404
+  same letter pos 4, lag 1         obs 0.0569  shuffled 0.0649  ratio 0.878  p_low 0.0814
+  same letter pos 5, lag 1         obs 0.0745  shuffled 0.0985  ratio 0.756  p_low 0.0002
+-- 2021-2024 (1292 days)
+  shared letters, lag 1            obs 1.2192  shuffled 1.2453  ratio 0.979  p_low 0.1274
+  shared letters, lag 2            obs 1.2403  shuffled 1.2452  ratio 0.996  p_low 0.4295
+  shared letters, lag 3            obs 1.2630  shuffled 1.2452  ratio 1.014  p_low 0.7836
+  shared letters, lag 7            obs 1.2568  shuffled 1.2446  ratio 1.010  p_low 0.7097
+  same-position matches, lag 1     obs 0.3455  shuffled 0.3923  ratio 0.881  p_low 0.0026
+  same-position matches, lag 2     obs 0.3690  shuffled 0.3921  ratio 0.941  p_low 0.0924
+  same letter pos 1, lag 1         obs 0.0511  shuffled 0.0663  ratio 0.771  p_low 0.0116
+  same letter pos 2, lag 1         obs 0.0868  shuffled 0.0842  ratio 1.030  p_low 0.6497
+  same letter pos 3, lag 1         obs 0.0736  shuffled 0.0779  ratio 0.945  p_low 0.2951
+  same letter pos 4, lag 1         obs 0.0565  shuffled 0.0646  ratio 0.875  p_low 0.1276
+  same letter pos 5, lag 1         obs 0.0775  shuffled 0.0992  ratio 0.781  p_low 0.0014
+-- 2025+ (641 days)
+  shared letters, lag 1            obs 1.1281  shuffled 1.1641  ratio 0.969  p_low 0.1352
+  shared letters, lag 2            obs 1.2050  shuffled 1.1647  ratio 1.035  p_low 0.8980
+  shared letters, lag 3            obs 1.1442  shuffled 1.1651  ratio 0.982  p_low 0.2691
+  shared letters, lag 7            obs 1.1435  shuffled 1.1652  ratio 0.981  p_low 0.2705
+  same-position matches, lag 1     obs 0.2844  shuffled 0.3795  ratio 0.749  p_low 0.0002
+  same-position matches, lag 2     obs 0.4053  shuffled 0.3801  ratio 1.066  p_low 0.8642
+  same letter pos 1, lag 1         obs 0.0375  shuffled 0.0644  ratio 0.583  p_low 0.0014
+  same letter pos 2, lag 1         obs 0.0641  shuffled 0.0856  ratio 0.748  p_low 0.0246
+  same letter pos 3, lag 1         obs 0.0563  shuffled 0.0673  ratio 0.836  p_low 0.1442
+  same letter pos 4, lag 1         obs 0.0578  shuffled 0.0650  ratio 0.889  p_low 0.2591
+  same letter pos 5, lag 1         obs 0.0688  shuffled 0.0972  ratio 0.707  p_low 0.0042
+
+Per-letter: P(letter today | letter yesterday) / P(letter today), all days
+  A 0.98 (n=769)   B 0.73 (n=224)   C 1.01 (n=372)   D 0.91 (n=309)   E 1.00 (n=909)   F 1.03 (n=173)
+  G 1.00 (n=253)   H 1.12 (n=322)   I 0.96 (n=538)   J 0.00 (n=22)   K 1.01 (n=169)   L 0.91 (n=541)
+  M 0.63 (n=253)   N 1.01 (n=465)   O 0.97 (n=581)   P 0.92 (n=278)   Q 0.00 (n=28)   R 1.04 (n=699)
+  S 1.03 (n=495)   T 1.01 (n=575)   U 0.94 (n=379)   V 0.59 (n=128)   W 0.92 (n=159)   X 0.00 (n=33)
+  Y 0.71 (n=312)   Z 2.01 (n=31)

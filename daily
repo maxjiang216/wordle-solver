@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""
+One command for daily play:
+  1. asks for any missing past answers and appends them to data/wordle_answers.csv
+  2. rebuilds weighted_three_solver if its source changed
+  3. refits the empirical prior and exports today's probabilities
+  4. runs the interactive guide
+  5. records today's answer when you solve it
+
+Usage: ./daily            (run from anywhere)
+       ./daily --opener sater   skip the ~20s opener search
+"""
+
+import argparse
+import csv
+import datetime as dt
+import os
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+CSV = os.path.join(ROOT, 'data', 'wordle_answers.csv')
+SOLVER = os.path.join(ROOT, 'weighted_three_solver')
+SOURCE = os.path.join(ROOT, 'src', 'weighted_three_solver.cpp')
+SOLVED = os.path.join(ROOT, 'cache', 'solved_today.txt')
+DAY0 = dt.date(2021, 6, 19)  # puzzle #0
+
+
+def append_answer(date, word):
+    with open(CSV, 'rb+') as f:  # make sure the file ends with a newline
+        f.seek(0, 2)
+        if f.tell():
+            f.seek(-1, 2)
+            if f.read(1) != b'\n':
+                f.write(b'\n')
+    with open(CSV, 'a') as f:
+        f.write(f'{date},{(date - DAY0).days},{word.upper()}\n')
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--opener', help='skip the opener search and start with this word')
+    args = ap.parse_args()
+    sys.stdout.reconfigure(line_buffering=True)
+    os.chdir(ROOT)
+
+    valid = {w.strip().upper() for w in open('valid_words.txt') if w.strip()}
+    rows = list(csv.DictReader(open(CSV)))
+    last = dt.date.fromisoformat(rows[-1]['date'])
+    today = dt.date.today()
+
+    if last >= today:
+        print(f'Today\'s answer is already recorded ({rows[-1]["word"]}). Nothing to play.')
+        return
+
+    # 1. fill gaps up to yesterday
+    d = last + dt.timedelta(days=1)
+    if d < today:
+        print(f'Answer history ends {last}. Enter the missing answers (Ctrl-C to quit).')
+    while d < today:
+        w = input(f'  {d} (#{(d - DAY0).days}): ').strip().upper()
+        if w not in valid:
+            print('    not a valid 5-letter word, try again')
+            continue
+        append_answer(d, w)
+        d += dt.timedelta(days=1)
+
+    # 2. build solver if needed
+    if not os.path.exists(SOLVER) or os.path.getmtime(SOLVER) < os.path.getmtime(SOURCE):
+        print('Building weighted_three_solver...')
+        subprocess.run(['make', '-s', 'weighted_three_solver'], check=True)
+
+    # 3. prior for today
+    print(f'Fitting prior for {today} (#{(today - DAY0).days})...')
+    out = subprocess.run([sys.executable, 'scripts/empirical_prior.py', '--top', '0', '--export'],
+                         check=True, capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        if line.startswith('Category probabilities'):
+            print('  ' + line.replace('Category probabilities for next day', 'today'))
+
+    # 4. play
+    os.makedirs(os.path.dirname(SOLVED), exist_ok=True)
+    if os.path.exists(SOLVED):
+        os.remove(SOLVED)
+    cmd = [SOLVER, '--play'] + ([args.opener.lower()] if args.opener else []) + ['--solved-file', SOLVED]
+    if not args.opener:
+        print('Searching for the best opener (~20s)...')
+    subprocess.run(cmd, stderr=subprocess.DEVNULL)
+
+    # 5. record
+    if os.path.exists(SOLVED):
+        word = open(SOLVED).read().strip().upper()
+        append_answer(today, word)
+        os.remove(SOLVED)
+        print(f'Recorded {today}: {word}')
+    else:
+        print('Not solved; tomorrow\'s run will ask for today\'s answer.')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print()

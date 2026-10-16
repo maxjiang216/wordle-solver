@@ -29,6 +29,32 @@ Python scripts are located in the `scripts/` directory:
 - **`extract_wordle_data.py`** - Extracts Wordle data from HTML sources
 - **`extract_wordle_words.py`** - Extracts word lists from Wordle data
 
+### Answer-drift analysis and empirical prior
+
+NYT has drifted from the original answer list (off-list words since 2023, repeats since
+2026-02-02). These scripts measure that and build a prior over tomorrow's answer:
+
+- **`build_word_features.py`** - Writes `data/word_features.csv` (Zipf frequency, dictionary,
+  proper-noun and inflection flags for every valid guess). Needs `pip install wordfreq`.
+- **`answer_trends.py`** - Repeats, off-list rate by quarter, frequency analysis, and
+  consecutive-day letter correlation tests → `reports/answer_trends_report.txt`.
+- **`empirical_prior.py`** - Fits the prior and prints the most likely next answers.
+- **`backtest_empirical_prior.py`** - Walk-forward backtest of prior quality and solver
+  performance → `reports/empirical_prior_backtest.txt`. Caches a ~220MB feedback matrix in `cache/`.
+
+The last three need only numpy.
+
+**`src/weighted_three_solver.cpp`** uses that prior: it maximizes P(solve within 3), then
+P(within 2), then minimizes expected guesses, with every valid word a possible answer.
+
+```bash
+python3 scripts/empirical_prior.py --export     # writes data/prior_next.csv
+make weighted_three_solver
+./weighted_three_solver                          # best openers + turn-2 table
+./weighted_three_solver --play                   # interactive guide
+python3 scripts/backtest_weighted_three.py       # → reports/weighted_three_backtest.txt
+```
+
 ## Data Files
 
 The `data/` directory contains:
