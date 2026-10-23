@@ -23,23 +23,33 @@ Usage:
     python3 scripts/backtest_empirical_prior.py --start 2026-02-02
 
 Output: reports/empirical_prior_backtest.txt
-The solver caches a 14855x14855 feedback matrix (~220MB) in cache/patterns.npy.
+The solver caches a 14855x14855 feedback matrix (~220MB) in cache/patterns.npy, and each
+variant's solver results in cache/solver_bt/ keyed by a hash of its daily priors.
+Variants run in parallel (one process each); the solver runs in parallel over months.
 """
 
 import argparse
-import datetime as dt
 import os
+
+# One BLAS thread per process: parallelism comes from --jobs, not from numpy.
+for _v in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_v, '1')
+import datetime as dt
+import hashlib
+import multiprocessing as mp
 import sys
 import time
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from empirical_prior import CATS, History, PriorModel, WordTable, load_answers  # noqa: E402
+from empirical_prior import (CATS, DayData, History, PriorModel, WordTable, category_prob_table,  # noqa: E402
+                             category_sequence, load_answers)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ALL_GREEN = 242
 SCORE_CAP = 2000  # candidates used for scoring a guess (by prior weight)
+SOLVER_VERSION = 1  # bump when best_guess/play change (invalidates cache/solver_bt)
 
 out_lines = []
 
@@ -134,72 +144,123 @@ def classic_prior(table, hist):
     return p
 
 
+OFFENSIVE = float(np.log(0.1))  # fixed x0.1 (0 of ~4.7 expected used; see model_improvement_notes)
+
 VARIANTS = {
     'classic': None,
     'cats-only': dict(use_features=False, use_lag=False),
     'no-lag': dict(use_lag=False),
     'full': dict(),
     'full-w365': dict(fit_half_life=365.0),
+    # candidate changes, each alone on top of "full", then all together
+    '+wordnet': dict(fit=('wordnet',)),
+    '+offensive': dict(fixed={'offensive': OFFENSIVE}),
+    '+rep-rule': dict(rep_rule=True),
+    '+floor1%': dict(floor=0.01),
+    '+all': dict(fit=('wordnet',), fixed={'offensive': OFFENSIVE}, rep_rule=True, floor=0.01),
+    # picked on 2025-01..2026-03 prior log-loss (wordnet dropped: no gain)
+    '+chosen': dict(fixed={'offensive': OFFENSIVE}, rep_rule=True, floor=0.01),
+    # no repeat yet within 524 days of last use: x0.01 below 500 days, age/zipf logit kept
+    '+min-gap': dict(fixed={'recent': float(np.log(0.01))}),
+    '+gap+floor+off': dict(fixed={'recent': float(np.log(0.01)), 'offensive': OFFENSIVE}, floor=0.01),
 }
+DEFAULT_VARIANTS = 'classic,cats-only,no-lag,full,full-w365'
+CANDIDATES = 'full,+wordnet,+offensive,+rep-rule,+floor1%,+all,+chosen'
+
+
+# Shared read-only state for forked workers.
+G = {}
+
+
+def run_prior(v):
+    """Walk-forward prior for one variant: bits, ranks and (optionally) the daily priors."""
+    table, answers, data, test, cats = G['table'], G['answers'], G['data'], G['test'], G['cats']
+    kw = G['variants'][v]
+    bits, ranks, saved, coef_log = [], [], [], []
+    model, fitted_month, theta = None, None, None
+    cp_table = None
+    if kw is not None:
+        model = PriorModel(table, **kw)
+        cp_table = category_prob_table(cats, model.half_life, model.pseudo)
+    hist = History(table)
+    t0 = time.time()
+    for i, (d, w) in enumerate(answers):
+        if i >= test[0]:
+            if model is not None and fitted_month != (d.year, d.month):
+                fitted_month = (d.year, d.month)
+                model.fit(answers[:i], data, theta0=theta)  # warm start from last month's fit
+                theta = model.theta
+                coef_log.append((d, model.describe()))
+            p = classic_prior(table, hist) if model is None else model.predict(hist, d, cp_table[i])
+            ai = table.index[w]
+            bits.append(-np.log2(p[ai]))
+            # Expected rank under random tie-breaking (uniform priors have big ties).
+            ranks.append((p > p[ai]).sum() + ((p == p[ai]).sum() + 1) / 2)
+            if v in G['keep']:
+                saved.append(p.astype(np.float32))
+        hist.push(d, w)
+    print(f'  prior {v} done in {time.time() - t0:.0f}s', file=sys.stderr, flush=True)
+    return v, np.array(bits), np.array(ranks), (np.array(saved) if saved else None), coef_log
+
+
+def run_month(job):
+    """Solver on one month of test days: opener from the first day's prior, then play each day."""
+    v, ks = job
+    M, table, answers, test, P = G['M'], G['table'], G['answers'], G['test'], G['saved'][v]
+    p = P[ks[0]].astype(np.float64)
+    cand = np.flatnonzero(p > 0)
+    opener = best_guess(M, cand, p[cand])
+    turns = [play(M, P[k].astype(np.float64), table.index[answers[test[k]][1]], opener) for k in ks]
+    return v, ks, turns, table.words[opener]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--start', default='2025-01-01')
+    ap.add_argument('--end', default=None, help='last test day (inclusive)')
     ap.add_argument('--no-solver', action='store_true')
+    ap.add_argument('--variants', default=None,
+                    help=f'comma list, or "candidates" for {CANDIDATES} (default: {DEFAULT_VARIANTS} + half-lives)')
+    ap.add_argument('--out', default=os.path.join(ROOT, 'reports', 'empirical_prior_backtest.txt'))
     ap.add_argument('--solver-variants', default='classic,full')
     ap.add_argument('--half-lives', default='30,60,120,0', help='category half-life sensitivity for "full" (0 = no decay)')
+    ap.add_argument('--jobs', type=int, default=4,
+                    help='worker processes (~1GB RAM each; machine has 15GB: stay <=10 and leave RAM free)')
     args = ap.parse_args()
     start = dt.date.fromisoformat(args.start)
+    t_start = time.time()
 
     table = WordTable()
     answers = load_answers()
+    if args.end:
+        answers = [a for a in answers if a[0] <= dt.date.fromisoformat(args.end)]
     test = [i for i, (d, _) in enumerate(answers) if d >= start]
     emit(f'Walk-forward backtest, {answers[test[0]][0]} .. {answers[test[-1]][0]} ({len(test)} days)')
     emit('Model refitted at the start of each month on prior answers only.')
     emit()
 
-    variants = dict(VARIANTS)
+    variants = {v: VARIANTS[v] for v in DEFAULT_VARIANTS.split(',')}
     for hl in args.half_lives.split(','):
         if hl and float(hl) != 60:
             variants[f'full-hl{hl}'] = dict(half_life=float(hl) or None)
+    if args.variants:
+        names = CANDIDATES if args.variants == 'candidates' else args.variants
+        variants = {v: {**variants, **VARIANTS}[v] for v in names.split(',')}
 
-    # priors[name][k] = probability vector for test day k (kept only as needed)
-    bits = {v: [] for v in variants}
-    ranks = {v: [] for v in variants}
-    cat_of_day = []
-    keep_priors = set(args.solver_variants.split(',')) if not args.no_solver else set()
-    saved = {v: [] for v in keep_priors}
-    models, fitted_month = {}, None
-    coef_log = []
+    keep = set(args.solver_variants.split(',')) & set(variants) if not args.no_solver else set()
+    G.update(table=table, answers=answers, data=DayData(table, answers), test=test,
+             cats=category_sequence(table, answers), variants=variants, keep=keep)
+    ctx = mp.get_context('fork')
+    with ctx.Pool(min(args.jobs, len(variants))) as pool:
+        res = {r[0]: r[1:] for r in pool.imap_unordered(run_prior, list(variants))}
+    bits = {v: res[v][0] for v in variants}
+    ranks = {v: res[v][1] for v in variants}
+    saved = {v: res[v][2] for v in keep}
+    coef_log = res['full'][3] if 'full' in res else next((r[3] for r in res.values() if r[3]), [])
+    print(f'  priors done at {time.time() - t_start:.0f}s', file=sys.stderr, flush=True)
 
-    hist = History(table)
-    for i, (d, w) in enumerate(answers):
-        if i >= test[0] and fitted_month != (d.year, d.month):
-            fitted_month = (d.year, d.month)
-            t0 = time.time()
-            for v, kw in variants.items():
-                if kw is not None:
-                    models[v] = PriorModel(table, **kw).fit(answers[:i])
-            coef_log.append((d, models['full'].describe()))
-            print(f'  refit {d} ({time.time() - t0:.1f}s)', file=sys.stderr, flush=True)
-        if i >= test[0]:
-            cat_of_day.append(hist.category_of(w))
-            ai = table.index[w]
-            for v, kw in variants.items():
-                if kw is None:
-                    p = classic_prior(table, hist)
-                else:
-                    m = models[v]
-                    p = m.predict(hist, d, m.category_probs(answers, i))
-                bits[v].append(-np.log2(p[ai]))
-                # Expected rank under random tie-breaking (uniform priors have big ties).
-                ranks[v].append((p > p[ai]).sum() + ((p == p[ai]).sum() + 1) / 2)
-                if v in saved:
-                    saved[v].append(p.astype(np.float32))
-        hist.push(d, w)
+    cat_of_day = G['cats'][test]
 
-    cat_of_day = np.array(cat_of_day)
     dates = [answers[i][0] for i in test]
     rep_start = next((dates[k] for k in range(len(test)) if cat_of_day[k] == 2), None)
     eras = [('all test days', np.ones(len(test), bool))]
@@ -223,13 +284,26 @@ def main():
             emit(f'  {v:12s} {b.mean():9.2f} {np.median(r):11.0f} {100 * (r <= 10).mean():5.1f}%'
                  f' {100 * (r <= 100).mean():6.1f}% {100 * (r <= 500).mean():6.1f}%' + ''.join(percat))
         emit(f'  category counts: ' + ', '.join(f'{c}={int((cat_of_day[em] == k).sum())}' for k, c in enumerate(CATS)))
+        if 'full' in bits:
+            emit('  paired vs full (bits/day, negative = better; +-1 SE):')
+            for v in variants:
+                if v == 'full':
+                    continue
+                d = (np.array(bits[v]) - np.array(bits['full']))[em]
+                parts = [f'all {d.mean():+.3f} +-{d.std(ddof=1) / np.sqrt(len(d)):.3f}']
+                for c in range(3):
+                    dc = d[cat_of_day[em] == c]
+                    if len(dc) > 1:
+                        parts.append(f'{CATS[c]} {dc.mean():+.3f} +-{dc.std(ddof=1) / np.sqrt(len(dc)):.3f} (n={len(dc)})')
+                emit(f'    {v:12s} ' + ', '.join(parts))
     emit()
     emit('Reference: uniform over all 14855 valid words = 13.86 bits; over 2309 original = 11.17 bits.')
     emit()
-    emit('Fitted "full" coefficients at first and last refit:')
-    for d, desc in (coef_log[0], coef_log[-1]):
-        emit(f' refit {d}:')
-        emit(desc)
+    if coef_log:
+        emit('Fitted coefficients at first and last refit:')
+        for d, desc in (coef_log[0], coef_log[-1]):
+            emit(f' refit {d}:')
+            emit(desc)
 
     if not args.no_solver:
         emit()
@@ -237,22 +311,34 @@ def main():
         emit('PART 2: SOLVER BACKTEST (same expected-cost solver; only the prior differs)')
         emit('=' * 78)
         M = feedback_matrix(table)
-        results = {}
+        G.update(M=M, saved=saved)
+        months = {}
+        for k, i in enumerate(test):
+            months.setdefault((answers[i][0].year, answers[i][0].month), []).append(k)
+        cache_dir = os.path.join(ROOT, 'cache', 'solver_bt')
+        os.makedirs(cache_dir, exist_ok=True)
+        results, jobs, paths = {}, [], {}
         for v in saved:
-            t0 = time.time()
-            turns = []
-            opener, opener_month = None, None
-            for k, i in enumerate(test):
-                d, w = answers[i]
-                p = saved[v][k].astype(np.float64)
-                if opener_month != (d.year, d.month):  # opener recomputed monthly from that day's prior
-                    opener_month = (d.year, d.month)
-                    cand = np.flatnonzero(p > 0)
-                    opener = best_guess(M, cand, p[cand])
-                    print(f'  {v} opener {d}: {table.words[opener]}', file=sys.stderr, flush=True)
-                turns.append(play(M, p, table.index[w], opener))
-            results[v] = np.array(turns)
-            print(f'  solver {v} done in {time.time() - t0:.0f}s', file=sys.stderr, flush=True)
+            # Key: the exact daily priors, test answers and solver settings.
+            h = hashlib.sha1(saved[v].tobytes())
+            h.update(','.join(answers[i][1] for i in test).encode())
+            h.update(f'{SOLVER_VERSION},{SCORE_CAP}'.encode())
+            paths[v] = os.path.join(cache_dir, h.hexdigest()[:16] + '.npy')
+            if os.path.exists(paths[v]):
+                results[v] = np.load(paths[v])
+                print(f'  solver {v}: cached', file=sys.stderr, flush=True)
+            else:
+                results[v] = np.zeros(len(test), dtype=np.int64)
+                jobs += [(v, ks) for ks in months.values()]
+        t0 = time.time()
+        if jobs:
+            with ctx.Pool(args.jobs) as pool:
+                for v, ks, turns, op in pool.imap_unordered(run_month, jobs):
+                    results[v][ks] = turns
+            for v in saved:
+                if not os.path.exists(paths[v]):
+                    np.save(paths[v], results[v])
+            print(f'  solver done in {time.time() - t0:.0f}s', file=sys.stderr, flush=True)
         for ename, em in eras:
             emit(f'-- {ename} ({em.sum()} days)')
             emit(f'  {"prior":12s} {"mean":>6s} {"fail>6":>7s} ' + ' '.join(f'{k:>5d}' for k in range(1, 8)) + '   per-category mean')
@@ -262,17 +348,20 @@ def main():
                 percat = ', '.join(f'{CATS[c]}={t[cat_of_day[em] == c].mean():.2f}'
                               for c in range(3) if (cat_of_day[em] == c).any())
                 emit(f'  {v:12s} {t.mean():6.3f} {(t > 6).sum():7d} {dist}   {percat}')
-        if 'classic' in results and 'full' in results:
-            diff = results['classic'] - results['full']
-            se = diff.std(ddof=1) / np.sqrt(len(diff))
+        if 'full' in results:
             emit()
-            emit(f'classic - full: {diff.mean():+.3f} guesses/day (paired SE {se:.3f});'
-                 f' full better on {(diff > 0).sum()} days, worse on {(diff < 0).sum()}')
+            for v in results:
+                if v == 'full':
+                    continue
+                diff = results[v] - results['full']
+                se = diff.std(ddof=1) / np.sqrt(len(diff))
+                emit(f'{v} - full: {diff.mean():+.3f} guesses/day (paired SE {se:.3f});'
+                     f' {v} better on {(diff < 0).sum()} days, worse on {(diff > 0).sum()}')
 
-    path = os.path.join(ROOT, 'reports', 'empirical_prior_backtest.txt')
+    path = args.out
     with open(path, 'w') as f:
         f.write('\n'.join(out_lines) + '\n')
-    print(f'\nwrote {path}')
+    print(f'\nwrote {path} ({time.time() - t_start:.0f}s total)')
 
 
 if __name__ == '__main__':

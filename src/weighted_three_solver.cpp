@@ -26,6 +26,7 @@
  *       (--solved-file F writes the winning word to F; used by ./daily)
  *   weighted_three_solver [--prior FILE] --eval [first_guess]        turn distribution
  *   weighted_three_solver --backtest DAYS.csv PRIORS.bin             walk-forward replay
+ * --threads N caps worker threads (default: all cores).
  * Default prior: data/prior_next.csv (word,prob). PRIORS.bin is float32 [days x words]
  * in valid_words.txt order; DAYS.csv has "date,answer" lines; the opener is
  * re-searched whenever the month changes.
@@ -35,6 +36,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -55,6 +57,7 @@ static const int SCORE_CAP = 2000;  // answers used when scoring turn-4+ guesses
 
 static double TOL = 1e-6;
 static int MAX_FIRST = 300;
+static int N_THREADS = 0;  // 0 = hardware_concurrency
 
 static vector<string> load_words(const string& path) {
     ifstream in(path);
@@ -124,7 +127,7 @@ struct Ctx {
 
 static void build_patterns(Ctx& c) {
     c.pat.resize((size_t)c.N * c.N);
-    int nt = max(1u, thread::hardware_concurrency());
+    int nt = N_THREADS > 0 ? N_THREADS : max(1u, thread::hardware_concurrency());
     atomic<int> next(0);
     vector<thread> pool;
     for (int t = 0; t < nt; t++)
@@ -321,11 +324,12 @@ struct FirstResult {
     Key key;
 };
 
-// Opener search. Returns results sorted best first.
 // Opener search. Evaluates `extra` (e.g. yesterday's best openers) plus the top
-// MAX_FIRST by bound. Returns results sorted best first.
+// MAX_FIRST by bound. Returns results sorted best first. The first queued opener
+// (`front` if it is queued, e.g. last month's winner) is evaluated alone first so
+// the others can be dropped early against its P3; this only changes the order.
 static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, bool verbose,
-                                        const vector<int>& extra = {}) {
+                                        const vector<int>& extra = {}, int front = -1) {
     int N = c.N;
     vector<int> byw(N);
     iota(byw.begin(), byw.end(), 0);
@@ -334,7 +338,7 @@ static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, b
     // Upper bound on P(<=3) for each first guess: per hint group, the top 243 weights.
     vector<FirstResult> cands(N);
     {
-        int nt = max(1u, thread::hardware_concurrency());
+        int nt = N_THREADS > 0 ? N_THREADS : max(1u, thread::hardware_concurrency());
         atomic<int> next(0);
         vector<thread> pool;
         for (int t = 0; t < nt; t++)
@@ -362,51 +366,85 @@ static vector<FirstResult> search_first(const Ctx& c, const vector<double>& w, b
     for (int i = 0; i < N && i < MAX_FIRST; i++)
         if (!queued[cands[i].guess]) queued[cands[i].guess] = 1, todo.push_back(cands[i]);
     bool capped = MAX_FIRST < N && cands[min(MAX_FIRST, N - 1)].bound >= 0;
+    for (int i = 1; i < (int)todo.size(); i++)
+        if (todo[i].guess == front) { rotate(todo.begin(), todo.begin() + i, todo.begin() + i + 1); break; }
 
     vector<int> order = byw;  // guess order for group solving: likely answers first
-    int nt = max(1u, thread::hardware_concurrency());
+    int nt = N_THREADS > 0 ? N_THREADS : max(1u, thread::hardware_concurrency());
     atomic<int> next(0), done(0);
     mutex mu;
     double best_p3 = 0;
+    int pruned_count = 0;
     vector<FirstResult> evaluated;
-    vector<thread> pool;
-    for (int t = 0; t < nt; t++)
-        pool.emplace_back([&]() {
-            Scratch s(N);
-            vector<vector<int>> groups(NPAT);
-            for (;;) {
-                int i = next.fetch_add(1);
-                if (i >= (int)todo.size()) break;
-                FirstResult r = todo[i];
+    auto work = [&](int limit) {
+        Scratch s(N);
+        vector<vector<int>> groups(NPAT);
+        for (;;) {
+            int i = next.fetch_add(1);
+            if (i >= limit) break;
+            FirstResult r = todo[i];
+            {
+                lock_guard<mutex> lk(mu);
+                if (r.bound < best_p3 - TOL) continue;  // cannot win
+            }
+            for (auto& v : groups) v.clear();
+            const u8* row = &c.pat[(size_t)r.guess * N];
+            for (int a : byw) groups[row[a]].push_back(a);  // already weight-sorted
+            // Per-group upper bound on P(<=3) (top NPAT weights, as in r.bound). Solve the
+            // loosest groups first and drop the opener once solved + remaining bounds
+            // cannot reach the best P3 found so far (exact: never drops a winner).
+            vector<pair<double, int>> todo_groups;  // (bound, pattern); singletons are exact
+            double ub = 0;
+            for (int p = 0; p < NPAT; p++) {
+                const auto& g = groups[p];
+                if (g.empty()) continue;
+                double b = 0;
+                for (int j = 0; j < (int)g.size() && j < (p == ALL_GREEN ? 1 : NPAT); j++) b += w[g[j]];
+                ub += b;
+                todo_groups.push_back({b, p});
+            }
+            sort(todo_groups.begin(), todo_groups.end(), greater<>());
+            Key k{0, 0, 0};
+            bool pruned = false;
+            for (auto& [b, p] : todo_groups) {
+                if (p == ALL_GREEN) {
+                    double wg = w[groups[p][0]];
+                    k.p3 += wg, k.p2 += wg, k.ev += wg;
+                    continue;
+                }
+                Key gk = solve_group(c, s, groups[p], w, order).second;
+                k.p3 += gk.p3, k.p2 += gk.p2, k.ev += gk.ev;
+                ub -= b - gk.p3;
+                double cur_best;
                 {
                     lock_guard<mutex> lk(mu);
-                    if (r.bound < best_p3 - TOL) continue;  // cannot win
+                    cur_best = best_p3;
                 }
-                for (auto& v : groups) v.clear();
-                const u8* row = &c.pat[(size_t)r.guess * N];
-                for (int a : byw) groups[row[a]].push_back(a);  // already weight-sorted
-                Key k{0, 0, 0};
-                for (int p = 0; p < NPAT; p++) {
-                    if (groups[p].empty()) continue;
-                    if (p == ALL_GREEN) {
-                        double wg = w[groups[p][0]];
-                        k.p3 += wg, k.p2 += wg, k.ev += wg;
-                        continue;
-                    }
-                    Key gk = solve_group(c, s, groups[p], w, order).second;
-                    k.p3 += gk.p3, k.p2 += gk.p2, k.ev += gk.ev;
-                }
-                r.key = k;
-                lock_guard<mutex> lk(mu);
-                evaluated.push_back(r);
-                best_p3 = max(best_p3, k.p3);
-                int d = ++done;
-                if (verbose && d % 10 == 0)
-                    cerr << "\r  evaluated " << d << " openers, best P3 " << 100 * best_p3 << "%" << flush;
+                if (ub < cur_best - TOL) { pruned = true; break; }
             }
-        });
+            if (pruned) {
+                lock_guard<mutex> lk(mu);
+                ++pruned_count;
+                continue;
+            }
+            r.key = k;
+            lock_guard<mutex> lk(mu);
+            evaluated.push_back(r);
+            best_p3 = max(best_p3, k.p3);
+            int d = ++done;
+            if (verbose && d % 10 == 0)
+                cerr << "\r  evaluated " << d << " openers, best P3 " << 100 * best_p3 << "%" << flush;
+        }
+    };
+    work(1);  // seed best_p3
+    next = 1;
+    vector<thread> pool;
+    for (int t = 0; t < nt; t++) pool.emplace_back(work, (int)todo.size());
     for (auto& t : pool) t.join();
     if (verbose) cerr << "\n";
+    if (verbose || getenv("W3_STATS"))
+        cerr << "  openers: " << todo.size() << " queued, " << evaluated.size() << " fully evaluated, "
+             << pruned_count << " dropped early\n";
     sort(evaluated.begin(), evaluated.end(), [](const FirstResult& x, const FirstResult& y) { return better(x.key, y.key); });
     if (verbose && capped)
         cerr << "  note: stopped at --max-first " << MAX_FIRST << "; result is best among those (not proven optimal)\n";
@@ -550,16 +588,18 @@ static void backtest(const Ctx& c, const string& days_path, const string& bin_pa
     vector<double> w(c.N);
     Scratch s(c.N);
     string month;
-    int first = -1;
+    int first = -1;  // last month's opener goes first in the next search
+    vector<double> searched_w;  // prior the current opener was searched on
     for (auto& [date, ans] : days) {
         if (fread(buf.data(), sizeof(float), c.N, f) != (size_t)c.N) { cerr << "short priors file\n"; exit(1); }
         double t = 0;
         for (int i = 0; i < c.N; i++) t += (w[i] = buf[i]);
         for (double& x : w) x /= t;
         vector<int> order = weight_order(w);
-        if (date.substr(0, 7) != month) {
+        if (date.substr(0, 7) != month && w != searched_w) {  // same prior (e.g. orig-list): same opener
             month = date.substr(0, 7);
-            auto res = search_first(c, w, false);
+            searched_w = w;
+            auto res = search_first(c, w, false, {}, first);
             first = res[0].guess;
             cerr << "  " << month << " opener " << c.words[first] << " P3 " << 100 * res[0].key.p3 << "%\n";
         }
@@ -581,6 +621,7 @@ int main(int argc, char** argv) {
         if (a == "--prior" && i + 1 < argc) prior_path = argv[++i];
         else if (a == "--top" && i + 1 < argc) top_n = atoi(argv[++i]);
         else if (a == "--max-first" && i + 1 < argc) MAX_FIRST = atoi(argv[++i]);
+        else if (a == "--threads" && i + 1 < argc) N_THREADS = atoi(argv[++i]);
         else if (a == "--tol" && i + 1 < argc) TOL = atof(argv[++i]);
         else if (a == "--solved-file" && i + 1 < argc) solved_file = argv[++i];
         else if (a == "--candidates" && i + 1 < argc) cand_path = argv[++i];
