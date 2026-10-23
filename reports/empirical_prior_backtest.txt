@@ -1,0 +1,71 @@
+Walk-forward backtest, 2025-01-01 .. 2026-10-21 (659 days)
+Model refitted at the start of each month on prior answers only.
+
+==============================================================================
+PART 1: PRIOR QUALITY  (bits = -log2 p(actual answer); lower is better)
+==============================================================================
+-- all test days (659 days)
+  prior        mean bits median rank  top10  top100  top500  bits|ORIG   bits|OFF   bits|REP
+  classic          10.95         393   0.0%    0.0%   82.5%      9.51     20.44     20.45
+  cats-only        10.59         393   0.0%    0.0%   82.5%      9.63     17.33     15.94
+  no-lag           10.11         312   3.0%   20.0%   71.3%      9.52     13.96     14.20
+  full             10.10         292   3.0%   21.1%   72.2%      9.50     13.95     14.21
+  full-w365        10.10         293   3.2%   21.1%   72.5%      9.49     14.05     14.23
+  full-hl30        10.10         292   3.0%   21.1%   72.4%      9.52     13.79     14.28
+  full-hl120       10.10         292   3.0%   21.1%   72.2%      9.47     14.21     14.26
+  full-hl0         10.28         292   3.0%   21.1%   72.1%      9.39     15.84     16.54
+  category counts: ORIG=572, OFF=59, REP=28
+-- since 2026-02-02 (262 days)
+  prior        mean bits median rank  top10  top100  top500  bits|ORIG   bits|OFF   bits|REP
+  classic          11.97         294   0.0%    0.0%   74.8%      9.12     20.45     20.45
+  cats-only        11.15         294   0.0%    0.0%   74.8%      9.35     16.88     15.94
+  no-lag           10.37         290   2.3%   19.5%   72.5%      9.25     13.31     14.20
+  full             10.35         272   2.7%   21.0%   71.8%      9.22     13.29     14.21
+  full-w365        10.36         272   2.7%   20.6%   72.1%      9.23     13.39     14.23
+  full-hl30        10.36         272   2.7%   21.0%   72.1%      9.28     13.06     14.28
+  full-hl120       10.35         272   2.7%   21.0%   71.8%      9.16     13.57     14.26
+  full-hl0         10.73         272   2.7%   21.0%   71.4%      9.02     15.28     16.54
+  category counts: ORIG=196, OFF=38, REP=28
+-- last 90 days (90 days)
+  prior        mean bits median rank  top10  top100  top500  bits|ORIG   bits|OFF   bits|REP
+  classic          13.41         251   0.0%    0.0%   61.1%      8.93     20.46     20.46
+  cats-only        11.85         251   0.0%    0.0%   61.1%      9.30     16.45     14.35
+  no-lag           10.46         304   2.2%   20.0%   64.4%      9.14     12.81     11.85
+  full             10.45         306   2.2%   16.7%   64.4%      9.14     12.80     11.80
+  full-w365        10.47         307   2.2%   15.6%   65.6%      9.13     12.88     11.81
+  full-hl30        10.41         307   2.2%   16.7%   65.6%      9.24     12.42     11.77
+  full-hl120       10.54         306   2.2%   16.7%   64.4%      9.04     13.19     12.13
+  full-hl0         11.20         306   2.2%   16.7%   63.3%      8.81     15.05     14.71
+  category counts: ORIG=55, OFF=25, REP=10
+
+Reference: uniform over all 14855 valid words = 13.86 bits; over 2309 original = 11.17 bits.
+
+Fitted coefficients at first and last refit:
+ refit 2025-01-01:
+  ORIG: zipf=+0.22, zipf^2=+0.04, dict=+0.56, inflected=-1.28
+  OFF : zipf=+0.57, zipf^2=-0.37, dict=+2.49, proper=-0.45, inflected=-2.73
+  REP : zipf=+0.00, age_years=+0.00
+  lag : same_first=-0.31 (x0.73), same_last=-0.26 (x0.77), same_mid=-0.02 (x0.98)
+ refit 2026-10-01:
+  ORIG: zipf=+0.28, zipf^2=+0.02, dict=+0.71, inflected=-1.85
+  OFF : zipf=+0.58, zipf^2=-0.58, dict=+2.85, proper=-1.19, inflected=-4.30
+  REP : zipf=+0.49, age_years=+1.87
+  lag : same_first=-0.41 (x0.66), same_last=-0.28 (x0.75), same_mid=-0.08 (x0.93)
+
+==============================================================================
+PART 2: SOLVER BACKTEST (same expected-cost solver; only the prior differs)
+==============================================================================
+-- all test days (659 days)
+  prior          mean  fail>6     1     2     3     4     5     6     7   per-category mean
+  full          3.100       0     0    73   457   119    10     0     0   ORIG=3.03, OFF=3.56, REP=3.64
+  classic       3.209       0     0    57   439   134    26     3     0   ORIG=3.06, OFF=4.14, REP=4.29
+-- since 2026-02-02 (262 days)
+  prior          mean  fail>6     1     2     3     4     5     6     7   per-category mean
+  full          3.149       0     0    30   169    57     6     0     0   ORIG=3.00, OFF=3.55, REP=3.64
+  classic       3.267       0     0    25   166    50    18     3     0   ORIG=2.96, OFF=4.11, REP=4.29
+-- last 90 days (90 days)
+  prior          mean  fail>6     1     2     3     4     5     6     7   per-category mean
+  full          3.122       0     0    12    56    21     1     0     0   ORIG=2.87, OFF=3.48, REP=3.60
+  classic       3.389       0     0     9    50    21     7     3     0   ORIG=2.89, OFF=4.12, REP=4.30
+
+classic - full: +0.109 guesses/day (paired SE 0.026); full better on 151 days, worse on 93
